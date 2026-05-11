@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "mitmproxy-mcp": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "--directory", "/home/ibrahim/mitmproxy-mcp", "mitmproxy-mcp"]
+    }
+  }
+}
