@@ -67,9 +67,69 @@ uv run uvicorn app.main:app --reload
 | `GET /reddit/subreddit/{name}` | 获取子版块帖子列表 |
 | `GET /reddit/subreddit/popular` | 获取热门子版块帖子 |
 
+## MCP 集成（mitmproxy-mcp）
+
+`mcp/` 目录包含一个独立的 [Model Context Protocol](https://modelcontextprotocol.io/) 服务器，让 LLM（如 Claude）可以直接控制 mitmproxy 代理，实现对 HTTP/HTTPS 流量的完整操作。
+
+### 核心能力
+
+| 分类 | 功能 |
+|------|------|
+| **代理控制** | 启停代理、设置流量域名过滤范围 |
+| **流量分析** | 捕获完整请求/响应（含 header、body、timing）、按域名/方法/关键词搜索 |
+| **拦截修改** | 注入 header、正则替换 body、阻断请求，支持 request/response 两个阶段 |
+| **隐身重放** | 用 `curl-cffi` 模拟 Chrome/Safari TLS 指纹重发请求，绕过反爬检测 |
+| **会话变量** | 从响应中提取 CSRF token 等动态值并在后续重放中自动注入 |
+| **数据提取** | 支持 JSONPath 和 CSS Selector 从响应体提取结构化数据 |
+| **API 反向工程** | 聚合流量生成 OpenAPI v3 规格文档、识别认证模式 |
+| **安全测试** | 对指定参数批量注入 fuzz payload，报告异常响应 |
+| **代码生成** | 从抓包流量生成可执行的爬虫代码（支持 curl_cffi / requests / aiohttp / playwright） |
+
+### 接入方式
+
+项目根目录已通过 `.mcp.json` 配置为 Claude Code 的 stdio MCP server，克隆后即可在 Claude Code 中直接使用。
+
+手动配置（Claude Desktop 等客户端）：
+
+```json
+{
+  "mcpServers": {
+    "mitmproxy-mcp": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/x-claw/mcp", "mitmproxy-mcp"]
+    }
+  }
+}
+```
+
+或通过 `uvx` 直接运行发布版：
+
+```json
+{
+  "mcpServers": {
+    "mitmproxy-mcp": {
+      "command": "uvx",
+      "args": ["mitmproxy-mcp"]
+    }
+  }
+}
+```
+
+### 快速上手
+
+```bash
+cd mcp
+uv sync
+uv run mitmproxy-mcp   # 启动 MCP server
+```
+
+> 使用 HTTPS 拦截功能前需在浏览器安装 mitmproxy CA 证书，并将浏览器代理设为 `localhost:8080`。
+
 ## 技术栈
 
 - [FastAPI](https://fastapi.tiangolo.com/) — Web 框架
 - [twscrape](https://github.com/vladkens/twscrape) — Twitter/X 数据抓取
 - [httpx](https://www.python-httpx.org/) — Reddit 异步 HTTP 客户端
+- [mitmproxy-mcp](https://github.com/snapspecter/mitmproxy-mcp) — MCP 代理控制服务器
 - [uv](https://docs.astral.sh/uv/) — 依赖管理
