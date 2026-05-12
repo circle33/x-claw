@@ -3,7 +3,7 @@
     "mitmproxy-mcp": {
       "type": "stdio",
       "command": "uv",
-      "args": ["run", "--directory", "./mcp/mitmproxy-mcp-main", "mitmproxy-mcp"]
+      "args": ["run", "--directory", "./mcp", "mitmproxy-mcp"]
     }
   }
 }
