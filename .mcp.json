@@ -3,7 +3,10 @@
     "mitmproxy-mcp": {
       "type": "stdio",
       "command": "uv",
-      "args": ["run", "--directory", "./mcp", "mitmproxy-mcp"]
+      "args": ["run", "--directory", "./mcp", "mitmproxy-mcp"],
+      "env": {
+        "PROXY_HOST": "http://172.26.208.1:7897"
+      }
     }
   }
 }

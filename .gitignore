@@ -11,3 +11,8 @@ wheels/
 
 # Environment variables
 .env
+
+accounts.db
+
+# Cookie files — contain credentials, never commit
+cookies/**/*.json

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Path, Query
 from app.core.reddit import RedditClient, get_reddit_client
 from app.schemas.reddit_post import RedditCommentResponse, RedditPostResponse
 
-router = APIRouter(prefix="/reddit/posts", tags=["reddit-posts"])
+router = APIRouter(prefix="/reddit/posts", tags=["Reddit"])
 
 
 def _parse_post(child: dict) -> dict:

@@ -11,9 +11,15 @@ x-claw is a FastAPI REST API that proxies Twitter/X (via twscrape) and Reddit (v
 ```bash
 uv sync                                        # install dependencies
 uv run uvicorn app.main:app --reload           # run dev server (http://localhost:8000/docs)
+
+# twscrape account management (run separately, not through the API)
+uv run twscrape accounts                       # list accounts and their login state
+uv run twscrape login_all                      # re-authenticate all accounts
 ```
 
 No test or lint configuration is set up in the project.
+
+The MCP sub-project (`mcp/`) has its own `uv` environment; run `uv sync` inside `mcp/` separately.
 
 ### Environment Variables (`.env`)
 
@@ -57,8 +63,12 @@ User-Agent is randomized via `fake-useragent`.
 
 ### Data Parsing
 
-- Twitter endpoints return twscrape object `.dict()` directly.
+- Twitter endpoints return twscrape object `.dict()` directly; the Pydantic schemas in `app/schemas/` document shape but are not always enforced as response models.
 - Reddit endpoints parse raw JSON manually with `_parse_post()` / `_parse_comment()` inside each endpoint file; comments are parsed recursively.
+
+### CORS
+
+`main.py` adds `CORSMiddleware` with `allow_origins=["*"]`. Keep this in mind if adding any authenticated routes.
 
 ### API Endpoints (prefix `/api/v1`)
 

@@ -3,7 +3,7 @@ from twscrape import API, gather
 
 from app.core.twscrape import get_api
 
-router = APIRouter(prefix="/trends", tags=["trends"])
+router = APIRouter(prefix="/trends", tags=["Twitter / X"])
 
 
 @router.get(

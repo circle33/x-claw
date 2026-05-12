@@ -4,7 +4,7 @@ from twscrape import API, gather
 from app.core.twscrape import get_api
 from app.schemas.tweet import TweetResponse
 
-router = APIRouter(prefix="/tweets", tags=["tweets"])
+router = APIRouter(prefix="/tweets", tags=["Twitter / X"])
 
 
 @router.get(

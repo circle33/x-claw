@@ -4,7 +4,7 @@ from app.core.reddit import RedditClient, get_reddit_client
 from app.schemas.reddit_post import RedditCommentResponse, RedditPostResponse
 from app.schemas.reddit_user import RedditUserResponse
 
-router = APIRouter(prefix="/reddit/users", tags=["reddit-users"])
+router = APIRouter(prefix="/reddit/users", tags=["Reddit"])
 
 
 def _parse_post(child: dict) -> dict:

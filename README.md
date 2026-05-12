@@ -1,6 +1,17 @@
 # x-claw
 
-基于 FastAPI 的 Twitter/X 与 Reddit 数据查询 REST API。Twitter/X 通过 [twscrape](https://github.com/vladkens/twscrape) 实现，Reddit 通过直接调用 `.json` 端点实现，均无需官方 API Key。
+基于 FastAPI 的多平台社交媒体数据查询 REST API，无需官方 API Key，通过浏览器 Cookie 认证。
+
+| 平台 | 实现方式 |
+|------|----------|
+| Twitter / X | [twscrape](https://github.com/vladkens/twscrape) |
+| Reddit | httpx + `.json` 端点 |
+| Bilibili | httpx + WBI 签名 |
+| 微博 Weibo | httpx（m.weibo.cn） |
+| 快手 Kuaishou | httpx + GraphQL |
+| 小红书 XHS | httpx + [xhshow](https://github.com/ReaJason/xhs) 签名 |
+| 抖音 Douyin | httpx + JS execjs 签名 |
+| 知乎 Zhihu | httpx + JS execjs 签名 |
 
 ## 快速开始
 
@@ -17,29 +28,38 @@ uv run uvicorn app.main:app --reload
 
 ## Cookie 配置
 
-服务使用浏览器导出的 cookie 进行认证，无需 API Key。
+将浏览器导出的 Cookie JSON 数组文件放入对应目录，文件名任意（如 `账号名.json`）：
 
-**Twitter/X**：将 cookie 文件放至 `cookies/x/@用户名.json`（浏览器扩展导出的 JSON 数组格式）。
+| 平台 | 目录 | 说明 |
+|------|------|------|
+| Twitter / X | `cookies/x/` | 需含 `auth_token` 和 `ct0` |
+| Reddit | `cookies/reddit/` | 可选，匿名也可访问大部分接口 |
+| Bilibili | `cookies/bilibili/` | 需含 `SESSDATA` |
+| 微博 | `cookies/weibo/` | 需含 `SUB` |
+| 快手 | `cookies/kuaishou/` | 需含 `passToken` |
+| 小红书 | `cookies/xhs/` | 需含 `a1`、`web_session` |
+| 抖音 | `cookies/douyin/` | 需含 `sessionid` |
+| 知乎 | `cookies/zhihu/` | 需含 `z_c0` |
 
-**Reddit**：将 cookie 文件放至 `cookies/reddit/用户名.json`（同上格式）。
-
-可通过 [EditThisCookie](https://www.editthiscookie.com/) 等浏览器扩展导出 cookie。
+推荐使用 [EditThisCookie](https://www.editthiscookie.com/) 等浏览器扩展导出 JSON 格式 Cookie。
 
 ## 环境变量
 
-可在项目根目录创建 `.env` 文件进行配置：
+在项目根目录创建 `.env` 文件：
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `COOKIES_DIR` | `./cookies` | cookie 文件目录 |
+| `COOKIES_DIR` | `./cookies` | Cookie 文件根目录 |
 | `DB_PATH` | `./accounts.db` | twscrape 账号数据库路径 |
-| `PROXY` | 系统 `https_proxy` / `HTTPS_PROXY` | 代理地址（可选） |
+| `PROXY` | 系统 `https_proxy` / `HTTPS_PROXY` | 代理地址（访问国内平台必填） |
+
+> **注意**：Bilibili、微博、快手、小红书、抖音、知乎均为国内平台，境外服务器需配置 `PROXY`。
 
 ## API 端点
 
-所有端点均以 `/api/v1` 为前缀。
+所有端点均以 `/api/v1` 为前缀，完整文档见 `/docs`。
 
-### Twitter/X
+### Twitter / X
 
 | 端点 | 说明 |
 |------|------|
@@ -66,6 +86,62 @@ uv run uvicorn app.main:app --reload
 | `GET /reddit/users/{username}/comments` | 获取用户评论 |
 | `GET /reddit/subreddit/{name}` | 获取子版块帖子列表 |
 | `GET /reddit/subreddit/popular` | 获取热门子版块帖子 |
+
+### Bilibili
+
+| 端点 | 说明 |
+|------|------|
+| `GET /bilibili/videos/search?keyword=` | 搜索视频 |
+| `GET /bilibili/videos/{bvid}` | 获取视频详情 |
+| `GET /bilibili/videos/{bvid}/comments` | 获取视频评论 |
+| `GET /bilibili/users/{mid}` | 获取用户信息 |
+| `GET /bilibili/users/{mid}/videos` | 获取用户投稿列表 |
+
+### 微博 Weibo
+
+| 端点 | 说明 |
+|------|------|
+| `GET /weibo/posts/search?keyword=` | 搜索微博 |
+| `GET /weibo/posts/{mid}/comments` | 获取微博评论 |
+| `GET /weibo/users/{user_id}` | 获取用户信息 |
+| `GET /weibo/users/{user_id}/posts` | 获取用户微博列表 |
+
+### 快手 Kuaishou
+
+| 端点 | 说明 |
+|------|------|
+| `GET /kuaishou/videos/search?keyword=` | 搜索视频 |
+| `GET /kuaishou/videos/{photo_id}` | 获取视频详情 |
+| `GET /kuaishou/videos/{photo_id}/comments` | 获取视频评论 |
+| `GET /kuaishou/users/{user_id}` | 获取用户信息 |
+| `GET /kuaishou/users/{user_id}/videos` | 获取用户视频列表 |
+
+### 小红书 XHS
+
+| 端点 | 说明 |
+|------|------|
+| `GET /xhs/notes/search?keyword=` | 搜索笔记 |
+| `GET /xhs/notes/{note_id}/comments?xsec_token=` | 获取笔记评论 |
+| `GET /xhs/users/{user_id}/notes` | 获取用户笔记列表 |
+
+### 抖音 Douyin
+
+| 端点 | 说明 |
+|------|------|
+| `GET /douyin/videos/search?keyword=` | 搜索视频 |
+| `GET /douyin/videos/{aweme_id}` | 获取视频详情 |
+| `GET /douyin/videos/{aweme_id}/comments` | 获取视频评论 |
+| `GET /douyin/users/{sec_user_id}` | 获取用户信息 |
+| `GET /douyin/users/{sec_user_id}/videos` | 获取用户视频列表 |
+
+### 知乎 Zhihu
+
+| 端点 | 说明 |
+|------|------|
+| `GET /zhihu/search?keyword=` | 搜索内容（回答/文章/问题） |
+| `GET /zhihu/answers/{answer_id}/comments` | 获取回答评论 |
+| `GET /zhihu/users/{url_token}/answers` | 获取用户回答列表 |
+| `GET /zhihu/users/{url_token}/articles` | 获取用户文章列表 |
 
 ## MCP 集成（mitmproxy-mcp）
 
@@ -130,6 +206,8 @@ uv run mitmproxy-mcp   # 启动 MCP server
 
 - [FastAPI](https://fastapi.tiangolo.com/) — Web 框架
 - [twscrape](https://github.com/vladkens/twscrape) — Twitter/X 数据抓取
-- [httpx](https://www.python-httpx.org/) — Reddit 异步 HTTP 客户端
+- [httpx](https://www.python-httpx.org/) — 异步 HTTP 客户端
+- [xhshow](https://github.com/ReaJason/xhs) — 小红书请求签名
+- [PyExecJS](https://github.com/doloopwhile/PyExecJS) — 执行 JS 签名（抖音/知乎）
 - [mitmproxy-mcp](https://github.com/snapspecter/mitmproxy-mcp) — MCP 代理控制服务器
 - [uv](https://docs.astral.sh/uv/) — 依赖管理
