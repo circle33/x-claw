@@ -13,6 +13,7 @@ wheels/
 .env
 
 accounts.db
+platform_accounts.db
 
 # Cookie files — contain credentials, never commit
 cookies/**/*.json

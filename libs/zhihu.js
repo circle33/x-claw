@@ -152,10 +152,9 @@ const extract_dc0_value_from_cookies = function (cookies) {
  * @param cookies 请求的cookies，需要包含dc0这个key
  * @returns {*}
  */
-function get_sign(url, cookies) {
+function get_sign(url, cookies, tc) {
     const ta = "101_3_3.0"
     const dc0 = extract_dc0_value_from_cookies(cookies)
-    const tc = "3_2.0aR_sn77yn6O92wOB8hPZnQr0EMYxc4f18wNBUgpTQ6nxERFZfTY0-4Lm-h3_tufIwJS8gcxTgJS_AuPZNcXCTwxI78YxEM20s4PGDwN8gGcYAupMWufIoLVqr4gxrRPOI0cY7HL8qun9g93mFukyigcmebS_FwOYPRP0E4rZUrN9DDom3hnynAUMnAVPF_PhaueTFH9fQL39OCCqYTxfb0rfi9wfPhSM6vxGDJo_rBHpQGNmBBLqPJHK2_w8C9eTVMO9Z9NOrMtfhGH_DgpM-BNM1DOxScLG3gg1Hre1FCXKQcXKkrSL1r9GWDXMk8wqBLNmbRH96BtOFqVZ7UYG3gC8D9cMS7Y9UrHLVCLZPJO8_CL_6GNCOg_zhJS8PbXmGTcBpgxfkieOPhNfthtf2gC_qD3YOce8nCwG2uwBOqeMoML9NBC1xb9yk6SuJhHLK7SM6LVfCve_3vLKlqcL6TxL_UosDvHLxrHmWgxBQ8Xs"
     const params_join_str = [ta, url, dc0, tc].join("+")
     const params_md5_value = crypto.createHash('md5').update(params_join_str).digest('hex')
 

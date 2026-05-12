@@ -9,6 +9,7 @@ import httpx
 from fake_useragent import UserAgent
 from fastapi import Request
 
+from app.core.account_pool import PooledClient, PlatformAccountPool
 from app.core.config import settings
 
 BILIBILI_BASE_URL = "https://api.bilibili.com"
@@ -46,16 +47,12 @@ class BilibiliSign:
         return params
 
 
-def _load_cookies(cookies_dir: Path) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for f in cookies_dir.glob("*.json"):
-        for c in json.loads(f.read_text(encoding="utf-8")):
-            result[c["name"]] = c["value"]
-    return result
+class BilibiliClient(PooledClient):
+    PLATFORM = "bilibili"
 
-
-class BilibiliClient:
-    def __init__(self) -> None:
+    def __init__(self, pool: PlatformAccountPool) -> None:
+        super().__init__(pool)
+        self.REFRESH_EVERY = settings.REFRESH_EVERY
         self._client: httpx.AsyncClient | None = None
         self._ua = UserAgent()
         self._img_key: str = ""
@@ -63,8 +60,18 @@ class BilibiliClient:
 
     async def init(self) -> None:
         cookies_dir = Path(settings.COOKIES_DIR) / "bilibili"
-        cookies = _load_cookies(cookies_dir) if cookies_dir.exists() else {}
+        await self._load_accounts(cookies_dir)
+        await self._try_refresh()
+
+    async def _refresh(self) -> None:
+        cookies_dir = Path(settings.COOKIES_DIR) / "bilibili"
+        await self._load_accounts(cookies_dir)
+        account = await self._select_account()
+        self._username = account["username"]
+        cookies = json.loads(account["cookies"])
         headers = {**_DEFAULT_HEADERS, "User-Agent": self._ua.random}
+        if self._client:
+            await self._client.aclose()
         self._client = httpx.AsyncClient(
             base_url=BILIBILI_BASE_URL,
             headers=headers,
@@ -80,7 +87,8 @@ class BilibiliClient:
             await self._client.aclose()
 
     async def _fetch_wbi_keys(self) -> None:
-        assert self._client is not None
+        if self._client is None:
+            return
         resp = await self._client.get("/x/web-interface/nav")
         resp.raise_for_status()
         wbi = resp.json()["data"]["wbi_img"]
@@ -91,11 +99,18 @@ class BilibiliClient:
         return BilibiliSign(self._img_key, self._sub_key).sign(params)
 
     async def _get(self, url: str, params: dict | None = None, sign: bool = True) -> Any:
-        assert self._client is not None
+        if self._client is None:
+            raise RuntimeError("No bilibili accounts configured — add cookie files to cookies/bilibili/")
         if sign and params:
             params = self._sign(params)
-        resp = await self._client.get(url, params=params)
-        resp.raise_for_status()
+        try:
+            resp = await self._client.get(url, params=params)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (401, 403):
+                await self._on_auth_error(str(e))
+            raise
+        await self._after_request()
         body = resp.json()
         if body.get("code") != 0:
             raise httpx.HTTPStatusError(

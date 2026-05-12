@@ -1,12 +1,14 @@
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 import execjs
 import httpx
 from fake_useragent import UserAgent
 from fastapi import Request
 
+from app.core.account_pool import PooledClient, PlatformAccountPool
 from app.core.config import settings
 
 DOUYIN_BASE_URL = "https://www.douyin.com"
@@ -47,25 +49,32 @@ _JS_PATH = Path(__file__).parent.parent.parent / "libs" / "douyin.js"
 _sign_obj = execjs.compile(_JS_PATH.read_text(encoding="utf-8-sig"))
 
 
-def _load_cookies(cookies_dir: Path) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for f in cookies_dir.glob("*.json"):
-        for c in json.loads(f.read_text(encoding="utf-8")):
-            result[c["name"]] = c["value"]
-    return result
+class DouyinClient(PooledClient):
+    PLATFORM = "douyin"
 
-
-class DouyinClient:
-    def __init__(self) -> None:
+    def __init__(self, pool: PlatformAccountPool) -> None:
+        super().__init__(pool)
+        self.REFRESH_EVERY = settings.REFRESH_EVERY
         self._client: httpx.AsyncClient | None = None
         self._ua = UserAgent()
+        self._ua_str: str = ""
 
     async def init(self) -> None:
         cookies_dir = Path(settings.COOKIES_DIR) / "douyin"
-        cookies = _load_cookies(cookies_dir) if cookies_dir.exists() else {}
+        await self._load_accounts(cookies_dir)
+        await self._try_refresh()
+
+    async def _refresh(self) -> None:
+        cookies_dir = Path(settings.COOKIES_DIR) / "douyin"
+        await self._load_accounts(cookies_dir)
+        account = await self._select_account()
+        self._username = account["username"]
+        cookies = json.loads(account["cookies"])
         ua = self._ua.chrome
-        headers = {**_DEFAULT_HEADERS, "User-Agent": ua}
         self._ua_str = ua
+        headers = {**_DEFAULT_HEADERS, "User-Agent": ua}
+        if self._client:
+            await self._client.aclose()
         self._client = httpx.AsyncClient(
             base_url=DOUYIN_BASE_URL,
             headers=headers,
@@ -85,13 +94,19 @@ class DouyinClient:
         return _sign_obj.call(fn, params_str, self._ua_str)
 
     async def _get(self, path: str, params: dict) -> Any:
-        assert self._client is not None
+        if self._client is None:
+            raise RuntimeError("No douyin accounts configured — add cookie files to cookies/douyin/")
         merged = {**_COMMON_PARAMS, **params}
-        from urllib.parse import urlencode
         params_str = urlencode(merged)
         merged["a_bogus"] = self._a_bogus(path, params_str)
-        resp = await self._client.get(path, params=merged)
-        resp.raise_for_status()
+        try:
+            resp = await self._client.get(path, params=merged)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (401, 403):
+                await self._on_auth_error(str(e))
+            raise
+        await self._after_request()
         return resp.json()
 
     async def search_videos(self, keyword: str, offset: int = 0, count: int = 10) -> dict:

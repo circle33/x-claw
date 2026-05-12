@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from twscrape import API
 
 from app.api.v1.router import api_router
+from app.core.account_pool import PlatformAccountPool
 from app.core.bilibili import BilibiliClient
 from app.core.config import settings
 from app.core.douyin import DouyinClient
@@ -29,31 +30,35 @@ async def lifespan(app: FastAPI):
     await load_accounts(api)
     app.state.twscrape_api = api
 
+    pool = PlatformAccountPool(settings.PLATFORM_DB_PATH)
+    await pool.init()
+    app.state.account_pool = pool
+
     reddit_client = RedditClient()
     await reddit_client.init()
     app.state.reddit_client = reddit_client
 
-    bilibili_client = BilibiliClient()
+    bilibili_client = BilibiliClient(pool)
     await bilibili_client.init()
     app.state.bilibili_client = bilibili_client
 
-    weibo_client = WeiboClient()
+    weibo_client = WeiboClient(pool)
     await weibo_client.init()
     app.state.weibo_client = weibo_client
 
-    kuaishou_client = KuaishouClient()
+    kuaishou_client = KuaishouClient(pool)
     await kuaishou_client.init()
     app.state.kuaishou_client = kuaishou_client
 
-    xhs_client = XhsClient()
+    xhs_client = XhsClient(pool)
     await xhs_client.init()
     app.state.xhs_client = xhs_client
 
-    douyin_client = DouyinClient()
+    douyin_client = DouyinClient(pool)
     await douyin_client.init()
     app.state.douyin_client = douyin_client
 
-    zhihu_client = ZhihuClient()
+    zhihu_client = ZhihuClient(pool)
     await zhihu_client.init()
     app.state.zhihu_client = zhihu_client
 
@@ -65,6 +70,7 @@ async def lifespan(app: FastAPI):
     await xhs_client.close()
     await douyin_client.close()
     await zhihu_client.close()
+    await pool.close()
 
 
 _TAGS = [
@@ -76,6 +82,7 @@ _TAGS = [
     {"name": "小红书 XHS", "description": "笔记搜索、评论、用户（xhshow 签名，需 Cookie）"},
     {"name": "抖音 Douyin", "description": "视频搜索、评论、用户（JS 签名，需 Cookie）"},
     {"name": "知乎 Zhihu", "description": "搜索、回答、文章、评论（JS 签名，需 Cookie）"},
+    {"name": "Accounts", "description": "查看各平台账号状态（cookie 使用情况、是否 active）"},
 ]
 
 app = FastAPI(

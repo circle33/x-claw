@@ -6,6 +6,7 @@ import httpx
 from fake_useragent import UserAgent
 from fastapi import Request
 
+from app.core.account_pool import PooledClient, PlatformAccountPool
 from app.core.config import settings
 
 KUAISHOU_BASE_URL = "https://www.kuaishou.com"
@@ -151,23 +152,29 @@ query visionProfilePhotoList($pcursor: String, $userId: String, $page: String) {
 """
 
 
-def _load_cookies(cookies_dir: Path) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for f in cookies_dir.glob("*.json"):
-        for c in json.loads(f.read_text(encoding="utf-8")):
-            result[c["name"]] = c["value"]
-    return result
+class KuaishouClient(PooledClient):
+    PLATFORM = "kuaishou"
 
-
-class KuaishouClient:
-    def __init__(self) -> None:
+    def __init__(self, pool: PlatformAccountPool) -> None:
+        super().__init__(pool)
+        self.REFRESH_EVERY = settings.REFRESH_EVERY
         self._client: httpx.AsyncClient | None = None
         self._ua = UserAgent()
 
     async def init(self) -> None:
         cookies_dir = Path(settings.COOKIES_DIR) / "kuaishou"
-        cookies = _load_cookies(cookies_dir) if cookies_dir.exists() else {}
+        await self._load_accounts(cookies_dir)
+        await self._try_refresh()
+
+    async def _refresh(self) -> None:
+        cookies_dir = Path(settings.COOKIES_DIR) / "kuaishou"
+        await self._load_accounts(cookies_dir)
+        account = await self._select_account()
+        self._username = account["username"]
+        cookies = json.loads(account["cookies"])
         headers = {**_DEFAULT_HEADERS, "User-Agent": self._ua.random}
+        if self._client:
+            await self._client.aclose()
         self._client = httpx.AsyncClient(
             base_url=KUAISHOU_BASE_URL,
             headers=headers,
@@ -183,10 +190,17 @@ class KuaishouClient:
             await self._client.aclose()
 
     async def _post_graphql(self, operation: str, variables: dict, query: str) -> Any:
-        assert self._client is not None
+        if self._client is None:
+            raise RuntimeError("No kuaishou accounts configured — add cookie files to cookies/kuaishou/")
         payload = {"operationName": operation, "variables": variables, "query": query}
-        resp = await self._client.post("/graphql", content=json.dumps(payload, ensure_ascii=False))
-        resp.raise_for_status()
+        try:
+            resp = await self._client.post("/graphql", content=json.dumps(payload, ensure_ascii=False))
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (401, 403):
+                await self._on_auth_error(str(e))
+            raise
+        await self._after_request()
         body = resp.json()
         if body.get("errors"):
             raise httpx.HTTPStatusError(
@@ -197,9 +211,16 @@ class KuaishouClient:
         return body.get("data", {})
 
     async def _post_rest(self, path: str, data: dict) -> Any:
-        assert self._client is not None
-        resp = await self._client.post(path, content=json.dumps(data, ensure_ascii=False))
-        resp.raise_for_status()
+        if self._client is None:
+            raise RuntimeError("No kuaishou accounts configured — add cookie files to cookies/kuaishou/")
+        try:
+            resp = await self._client.post(path, content=json.dumps(data, ensure_ascii=False))
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (401, 403):
+                await self._on_auth_error(str(e))
+            raise
+        await self._after_request()
         return resp.json()
 
     async def search_videos(self, keyword: str, pcursor: str = "") -> dict:
