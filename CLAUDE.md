@@ -79,6 +79,36 @@ Each platform (`bilibili`, `weibo`, `kuaishou`, `xhs`, `douyin`, `zhihu`) follow
 - Dependency injection via `Depends(get_<platform>_client)` in endpoint files
 - Pydantic schemas in `app/schemas/<platform>.py`
 
+#### PooledClient Base Class (account rotation)
+
+All platform clients extend [`PooledClient`](app/core/account_pool.py), which provides:
+- **PlatformAccountPool** — SQLite-backed (via aiosqlite) registry of cookie accounts per platform
+- **Auto-rotation** — after every request, `_after_request()` increments a counter; accounts cycle to the least-used one after `REFRESH_EVERY` (default 500) requests
+- **Auth error recovery** — on 401/403, `_on_auth_error()` marks the account inactive and triggers `_refresh()` to pick a fallback
+- **`_refresh()` contract** — each subclass must implement `_refresh()`: re-reads cookie files from disk, picks an active account, creates a fresh `httpx.AsyncClient` with that account's cookies
+- **`_try_refresh()`** — safe wrapper that logs a warning instead of crashing when no cookies exist (allows graceful degradation)
+
+Clients call `await self._load_accounts(cookies_dir)` at init to populate the pool, then `await self._try_refresh()` to establish the first session.
+
+#### Platform-Specific Signing
+
+Each platform's `_get()` wraps the raw httpx call with signing and error handling; the wrapper signatures differ slightly:
+
+| Platform | Signing | Cookie file | Notes |
+|---|---|---|---|
+| Bilibili | WBI (`img_key`+`sub_key` via nav endpoint) | `SESSDATA` | Fetches WBI keys from `/x/web-interface/nav` on refresh, persists updated cookies back via `_save_cookies_to_pool()` |
+| Weibo | None (mobile endpoint) | `SUB` | Uses `m.weibo.cn`, checks `body.ok == 1` |
+| Kuaishou | GraphQL POST | `passToken` | |
+| XHS | xhshow library | `a1`, `web_session` | |
+| Douyin | execjs (`libs/douyin.js`) | `sessionid` | Calls `_sign_obj.call("sign_datail"\|"sign_reply", ...)` for `a_bogus` param |
+| Zhihu | execjs (`libs/zhihu.js`) | `z_c0` | |
+
+For Douyin and Zhihu, the JS signature files live in [`libs/`](libs/) and are loaded at module import time via `execjs.compile()`. Douyin also merges a large set of common params (`_COMMON_PARAMS`) into every request.
+
+#### Endpoint File Pattern
+
+Each platform splits into separate `_videos`/`_posts` and `_users` endpoint modules (e.g. [`bilibili_videos.py`](app/api/v1/endpoints/bilibili_videos.py) + [`bilibili_users.py`](app/api/v1/endpoints/bilibili_users.py)). Endpoints call into the client class and use local `_parse_*()` functions to extract fields from the raw API response — they rarely return raw API data directly.
+
 ### Data Parsing
 
 - Twitter endpoints return twscrape object `.dict()` directly; schemas in `app/schemas/` document shape but are not always enforced as response models.
@@ -103,7 +133,7 @@ Each platform (`bilibili`, `weibo`, `kuaishou`, `xhs`, `douyin`, `zhihu`) follow
 | reddit-posts | `GET /reddit/posts/search`, `/reddit/posts/{subreddit}/{post_id}`, `/reddit/posts/{subreddit}/{post_id}/comments` |
 | reddit-users | `GET /reddit/users/{username}`, `/reddit/users/{username}/posts`, `/reddit/users/{username}/comments` |
 | reddit-subreddit | `GET /reddit/subreddit/{name}`, `/reddit/subreddit/popular` |
-| accounts | `GET /accounts` — status of loaded twscrape accounts |
+| accounts | `GET /accounts` — status of all platform accounts (active/inactive, request count, last used, error) |
 | bilibili | video search, video details, user profile/videos |
 | weibo | post search, post details, user profile/posts |
 | kuaishou | video search, video details, user profile/videos |

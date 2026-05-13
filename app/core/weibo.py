@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,8 @@ from fastapi import Request
 
 from app.core.account_pool import PooledClient, PlatformAccountPool
 from app.core.config import settings
+
+_log = logging.getLogger(__name__)
 
 WEIBO_BASE_URL = "https://m.weibo.cn"
 
@@ -67,9 +70,22 @@ class WeiboClient(PooledClient):
             if e.response.status_code in (401, 403):
                 await self._on_auth_error(str(e))
             raise
+        # Check for non-JSON response (login page, captcha, etc.)
+        ctype = resp.headers.get("content-type", "")
+        if "json" not in ctype:
+            _log.warning("Weibo: non-JSON response (content-type=%s), session may be invalid", ctype)
+            _log.debug("Weibo: body preview: %s", resp.text[:300])
+            await self._on_auth_error(f"non-JSON response (content-type={ctype})")
+            raise RuntimeError("Weibo session expired or login required")
+        try:
+            body = resp.json()
+        except json.JSONDecodeError:
+            _log.warning("Weibo: failed to decode JSON response")
+            await self._on_auth_error("JSON decode failure")
+            raise
         await self._after_request()
-        body = resp.json()
         if body.get("ok") != 1:
+            await self._on_auth_error(f"API error: {body.get('msg', 'unknown')}")
             raise httpx.HTTPStatusError(
                 f"Weibo API error: {body.get('msg', body)}",
                 request=resp.request,

@@ -7,23 +7,26 @@ router = APIRouter(prefix="/xhs/notes", tags=["小红书 XHS"])
 
 
 def _parse_note(item: dict) -> dict:
-    note = item.get("note_card", item)
-    cover = note.get("cover") or {}
-    interact = note.get("interact_info") or {}
-    user = note.get("user") or {}
+    # Skip non-note items (e.g. hot_query recommendations)
+    note_card = item.get("note_card")
+    if not note_card:
+        return {}
+    cover = note_card.get("cover") or {}
+    interact = note_card.get("interact_info") or {}
+    user = note_card.get("user") or {}
     return {
-        "note_id": note.get("note_id", item.get("id", "")),
-        "title": note.get("title", ""),
-        "desc": note.get("desc", ""),
-        "type": note.get("type", ""),
+        "note_id": note_card.get("note_id", item.get("id", "")),
+        "title": note_card.get("display_title", ""),
+        "desc": note_card.get("desc", ""),
+        "type": note_card.get("type", ""),
         "user_id": user.get("user_id", ""),
-        "user_name": user.get("nickname", ""),
+        "user_name": user.get("nickname", user.get("nick_name", "")),
         "liked_count": _parse_count(interact.get("liked_count", "0")),
         "comment_count": _parse_count(interact.get("comment_count", "0")),
-        "share_count": _parse_count(interact.get("share_count", "0")),
+        "share_count": _parse_count(interact.get("shared_count", "0")),
         "collected_count": _parse_count(interact.get("collected_count", "0")),
-        "xsec_token": item.get("xsec_token", note.get("xsec_token", "")),
-        "cover_url": cover.get("url", cover.get("info_list", [{}])[0].get("url", "") if cover.get("info_list") else ""),
+        "xsec_token": item.get("xsec_token", note_card.get("xsec_token", "")),
+        "cover_url": cover.get("url_default", cover.get("url_pre", "")),
     }
 
 
@@ -61,7 +64,8 @@ async def search_notes(
 ):
     data = await client.search_notes(keyword, page=page, page_size=page_size, sort=sort, note_type=note_type)
     items = data.get("items") or []
-    return [XhsNoteResponse(**_parse_note(item)) for item in items]
+    parsed = [_parse_note(item) for item in items]
+    return [XhsNoteResponse(**p) for p in parsed if p]
 
 
 @router.get("/{note_id}/comments", response_model=XhsCommentPageResponse)
