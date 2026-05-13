@@ -1,13 +1,16 @@
 import json
+import logging
 from pathlib import Path
 
 import httpx
 from fake_useragent import UserAgent
 from fastapi import Request
 
+from app.core.account_pool import PooledClient, PlatformAccountPool
 from app.core.config import settings
 
 REDDIT_BASE_URL = "https://www.reddit.com"
+_log = logging.getLogger(__name__)
 
 _DEFAULT_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -22,26 +25,37 @@ _DEFAULT_HEADERS = {
 }
 
 
-def _load_cookies(cookies_dir: Path) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for cookie_file in cookies_dir.glob("*.json"):
-        cookies: list[dict] = json.loads(
-            cookie_file.read_text(encoding="utf-8")
-        )
-        for c in cookies:
-            result[c["name"]] = c["value"]
-    return result
+class RedditClient(PooledClient):
+    PLATFORM = "reddit"
 
-
-class RedditClient:
-    def __init__(self) -> None:
+    def __init__(self, pool: PlatformAccountPool) -> None:
+        super().__init__(pool)
         self._client: httpx.AsyncClient | None = None
         self._ua = UserAgent()
 
     async def init(self) -> None:
         cookies_dir = Path(settings.COOKIES_DIR) / "reddit"
-        cookies = _load_cookies(cookies_dir) if cookies_dir.exists() else {}
+        await self._load_accounts(cookies_dir)
+        await self._try_refresh()
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                base_url=REDDIT_BASE_URL,
+                headers={**_DEFAULT_HEADERS, "User-Agent": self._ua.random},
+                timeout=30.0,
+                follow_redirects=True,
+                proxy=settings.PROXY,
+            )
+
+    async def _refresh(self) -> None:
+        cookies_dir = Path(settings.COOKIES_DIR) / "reddit"
+        await self._load_accounts(cookies_dir)
+        accounts = await self._pool.get_active(self.PLATFORM)
+        cookies = json.loads(accounts[0]["cookies"]) if accounts else {}
+        if accounts:
+            self._username = accounts[0]["username"]
         headers = {**_DEFAULT_HEADERS, "User-Agent": self._ua.random}
+        if self._client:
+            await self._client.aclose()
         self._client = httpx.AsyncClient(
             base_url=REDDIT_BASE_URL,
             headers=headers,
@@ -50,6 +64,15 @@ class RedditClient:
             follow_redirects=True,
             proxy=settings.PROXY,
         )
+        await self._save_cookies_to_pool()
+
+    async def _save_cookies_to_pool(self) -> None:
+        if self._client is None or not self._username:
+            return
+        cookie_dict = dict(self._client.cookies)
+        if cookie_dict:
+            await self._pool.upsert(self.PLATFORM, self._username, cookie_dict)
+            _log.info("Reddit: persisted %d cookies for account %s", len(cookie_dict), self._username)
 
     async def close(self) -> None:
         if self._client:

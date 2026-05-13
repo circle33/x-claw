@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
     await pool.init()
     app.state.account_pool = pool
 
-    reddit_client = RedditClient()
+    reddit_client = RedditClient(pool)
     await reddit_client.init()
     app.state.reddit_client = reddit_client
 

@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 import urllib.parse
 from hashlib import md5
@@ -13,6 +14,8 @@ from app.core.account_pool import PooledClient, PlatformAccountPool
 from app.core.config import settings
 
 BILIBILI_BASE_URL = "https://api.bilibili.com"
+
+_log = logging.getLogger(__name__)
 
 _DEFAULT_HEADERS = {
     "Referer": "https://www.bilibili.com",
@@ -81,6 +84,15 @@ class BilibiliClient(PooledClient):
             proxy=settings.PROXY,
         )
         await self._fetch_wbi_keys()
+        await self._save_cookies_to_pool()
+
+    async def _save_cookies_to_pool(self) -> None:
+        if self._client is None or not self._username:
+            return
+        cookie_dict = dict(self._client.cookies)
+        if cookie_dict:
+            await self._pool.upsert(self.PLATFORM, self._username, cookie_dict)
+            _log.info("Bilibili: persisted %d cookies for account %s", len(cookie_dict), self._username)
 
     async def close(self) -> None:
         if self._client:

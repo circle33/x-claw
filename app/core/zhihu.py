@@ -71,6 +71,16 @@ class ZhihuClient(PooledClient):
             _log.warning("Zhihu: warmup goto failed: %s", e)
         finally:
             await page.close()
+        await self._save_cookies_to_pool()
+
+    async def _save_cookies_to_pool(self) -> None:
+        if self._context is None or not self._username:
+            return
+        cookies = await self._context.cookies(["https://www.zhihu.com"])
+        cookie_dict = {c["name"]: c["value"] for c in cookies}
+        if cookie_dict:
+            await self._pool.upsert(self.PLATFORM, self._username, cookie_dict)
+            _log.info("Zhihu: persisted %d cookies for account %s", len(cookie_dict), self._username)
 
     async def close(self) -> None:
         if self._context:
